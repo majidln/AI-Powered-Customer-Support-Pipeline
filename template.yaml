@@ -16,18 +16,18 @@ Globals:
     LoggingConfig:
       LogFormat: JSON
 Resources:
-  HelloWorldFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+  SupportRequestReceiverFunction:
+    Type: AWS::Serverless::Function
     Properties:
-      Handler: handlers/ticket-receiver.handler
+      Handler: handlers/support-request-receiver.handler
       Architectures:
       - x86_64
       Events:
-        HelloWorld:
-          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+        ReceiveSupportRequest:
+          Type: Api
           Properties:
-            Path: /hello
-            Method: get
+            Path: /support-request
+            Method: post
     Metadata: # Manage esbuild properties
       BuildMethod: esbuild
       BuildProperties:
@@ -54,12 +54,12 @@ Outputs:
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
   HelloWorldApi:
-    Description: API Gateway endpoint URL for Prod stage for Hello World 
+    Description: API Gateway endpoint URL for Prod stage for Customer Support Pipeline
       function
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/hello/"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/"
   HelloWorldFunction:
     Description: Hello World Lambda Function ARN
-    Value: !GetAtt HelloWorldFunction.Arn
+    Value: !GetAtt SupportRequestReceiverFunction.Arn
   HelloWorldFunctionIamRole:
     Description: Implicit IAM Role created for Hello World function
-    Value: !GetAtt HelloWorldFunctionRole.Arn
+    Value: !GetAtt SupportRequestReceiverFunction.Arn

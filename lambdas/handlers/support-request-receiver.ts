@@ -5,7 +5,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
         return {
             statusCode: 200,
             body: JSON.stringify({
-                message: 'ticket received',
+                message: 'new ticket has been created for this request',
             }),
         };
     } catch (err) {
