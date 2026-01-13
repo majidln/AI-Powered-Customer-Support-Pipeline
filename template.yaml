@@ -31,10 +31,32 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SupportTicketTable
+        - SQSSendMessagePolicy:
+            QueueName: SupportRequestQueue
       Environment:
         Variables:
           SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
-    Metadata: # Manage esbuild properties
+          SUPPORT_REQUEST_QUEUE: !GetAtt SupportRequestQueue.QueueUrl
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2020
+        Sourcemap: true
+
+  SupportRequestProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/support-request-processor.handler
+      Architectures:
+      - x86_64
+      Events:
+        ProcessQueue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SupportRequestQueue.Arn
+            BatchSize: 10
+    Metadata:
       BuildMethod: esbuild
       BuildProperties:
         Minify: true
@@ -43,6 +65,8 @@ Resources:
 
   SupportTicketTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: SupportTickets
       AttributeDefinitions:
@@ -52,31 +76,38 @@ Resources:
         - AttributeName: id
           KeyType: HASH
       BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
 
-  ApplicationResourceGroup:
-    Type: AWS::ResourceGroups::Group
+  SupportRequestQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
-      Name:
-        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
-      ResourceQuery:
-        Type: CLOUDFORMATION_STACK_1_0
-  ApplicationInsightsMonitoring:
-    Type: AWS::ApplicationInsights::Application
+      QueueName: SupportRequestQueue
+      VisibilityTimeout: 30
+      MessageRetentionPeriod: 1209600  # 14 days in seconds
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt SupportRequestDLQ.Arn
+        maxReceiveCount: 3
+
+  SupportRequestDLQ:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
-      ResourceGroupName:
-        Ref: ApplicationResourceGroup
-      AutoConfigurationEnabled: true
+      QueueName: SupportRequestDLQ
+      MessageRetentionPeriod: 1209600  # 14 days
+
 Outputs:
-  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
-  # Find out more about other implicit resources you can reference within SAM
-  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  HelloWorldApi:
+  ApiEndpoint:
     Description: API Gateway endpoint URL for Prod stage for Customer Support Pipeline
       function
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/"
-  HelloWorldFunction:
+  SupportRequestReceiverFunction:
     Description: Hello World Lambda Function ARN
     Value: !GetAtt SupportRequestReceiverFunction.Arn
-  HelloWorldFunctionIamRole:
-    Description: Implicit IAM Role created for Hello World function
-    Value: !GetAtt SupportRequestReceiverFunctionRole.Arn
+  SupportRequestQueue:
+    Description: Support Request Queue ARN
+    Value: !GetAtt SupportRequestQueue.Arn
