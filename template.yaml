@@ -28,6 +28,12 @@ Resources:
           Properties:
             Path: /support-request
             Method: post
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SupportTicketTable
+      Environment:
+        Variables:
+          SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
     Metadata: # Manage esbuild properties
       BuildMethod: esbuild
       BuildProperties:
@@ -35,6 +41,17 @@ Resources:
         Target: es2020
         Sourcemap: true
 
+  SupportTicketTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SupportTickets
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
 
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
@@ -48,7 +65,7 @@ Resources:
     Properties:
       ResourceGroupName:
         Ref: ApplicationResourceGroup
-      AutoConfigurationEnabled: 'true'
+      AutoConfigurationEnabled: true
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
@@ -62,4 +79,4 @@ Outputs:
     Value: !GetAtt SupportRequestReceiverFunction.Arn
   HelloWorldFunctionIamRole:
     Description: Implicit IAM Role created for Hello World function
-    Value: !GetAtt SupportRequestReceiverFunction.Arn
+    Value: !GetAtt SupportRequestReceiverFunctionRole.Arn
