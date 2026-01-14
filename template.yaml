@@ -56,6 +56,12 @@ Resources:
           Properties:
             Queue: !GetAtt SupportRequestQueue.Arn
             BatchSize: 10
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SupportTicketTable
+      Environment:
+        Variables:
+          SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -68,7 +74,6 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
-      TableName: SupportTickets
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S

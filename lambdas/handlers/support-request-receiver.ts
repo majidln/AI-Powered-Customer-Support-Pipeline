@@ -5,6 +5,7 @@ import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { v4 as uuidv4 } from 'uuid';
 
 const ddClient = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(ddClient);
 const sqsClient = new SQSClient({});
 
 const queueUrl = process.env.SUPPORT_REQUEST_QUEUE || '';
@@ -13,10 +14,9 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     try {
         const body = event.body ? JSON.parse(event.body) : {};
         console.log(body);
-        const docClient = DynamoDBDocumentClient.from(ddClient);
 
         const command = new PutCommand({
-            TableName: "SupportTickets",
+            TableName: process.env.SUPPORT_TICKETS_TABLE,
             Item: {
                 id: uuidv4(),
                 content: body.content,
