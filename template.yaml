@@ -67,12 +67,12 @@ Resources:
               Action: 
                 - bedrock:InvokeModel
               Resource:
-                - 'arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v1'
+                - 'arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0'
 
       Environment:
         Variables:
           SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
-          BEDROCK_MODEL_ID: amazon.titan-embed-text-v1
+          BEDROCK_MODEL_ID: amazon.nova-lite-v1:0
           SNS_TOPIC_ARN: !GetAtt SupportSnsTopic.TopicArn
           SNS_FAILED_TOPIC_ARN: !GetAtt SupportFailedSnsTopic.TopicArn
     Metadata:

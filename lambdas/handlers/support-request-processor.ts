@@ -39,21 +39,19 @@ export const handler = async (event: SQSEvent): Promise<void> => {
 };
 
 async function generateTicketAnalytics(message: SupportTicketMessage): Promise<TicketAnalytics> {
-    const prompt = `
-        Analyze the following customer support ticket and provide:
-            1. Urgency level (${Object.values(Urgency).join(', ')})
-            2. A professional response
+    const prompt = `Analyze the following customer support ticket and provide:
+1. Urgency level (${Object.values(Urgency).join(', ')})
+2. A professional response
 
-        Ticket: ${message.content}
+Ticket: ${message.content}
 
-        Resond in Json format:
-        {
-            "urgency": "The ticket urgency level",
-            "response": "Your response to the ticket"
-        }
-    `
+Respond in JSON format:
+{
+    "urgency": "The ticket urgency level",
+    "response": "Your response to the ticket"
+}`;
 
-    const modelId = process.env.BEDROCK_MODEL_ID || 'amazon.titan-embed-text-v1';
+    const modelId = process.env.BEDROCK_MODEL_ID || 'amazon.nova-lite-v1:0';
     console.log(`Using model ID: ${modelId}`);
 
     const input = {
@@ -61,11 +59,18 @@ async function generateTicketAnalytics(message: SupportTicketMessage): Promise<T
         contentType: 'application/json',
         accept: 'application/json',
         body: JSON.stringify({
-            inputText: prompt,
-            textGenerationConfig: {
-                maxTokenCount: 512,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { text: prompt }
+                    ]
+                }
+            ],
+            inferenceConfig: {
+                max_new_tokens: 512,
                 temperature: 0.1,
-                topP: 0.9
+                top_p: 0.9
             }
         })
     };
@@ -74,7 +79,9 @@ async function generateTicketAnalytics(message: SupportTicketMessage): Promise<T
         const command = new InvokeModelCommand(input);
         const response = await bedrockClient.send(command);
         const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-        const resultText = responseBody.results[0].outputText.trim();
+        
+        // Nova returns content in this structure
+        const resultText = responseBody.output.message.content[0].text.trim();
 
         const jsonMatch = resultText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -92,7 +99,6 @@ async function generateTicketAnalytics(message: SupportTicketMessage): Promise<T
             urgency: Urgency.MEDIUM,
             response: 'Thank you for contacting support. We have received your request and will get back to you soon.'
         };
-        
     }
 }
 
