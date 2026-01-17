@@ -1,127 +1,276 @@
 # AI-Powered Customer Support Pipeline
 
-This project contains source code and supporting files for a serverless application that you can deploy with the SAM CLI. It includes the following files and folders.
+A serverless AWS application that processes customer support tickets using AI to automatically analyze urgency and generate responses.
 
-- hello-world - Code for the application's Lambda function written in TypeScript.
-- events - Invocation events that you can use to invoke the function.
-- hello-world/tests - Unit tests for the application code. 
-- template.yaml - A template that defines the application's AWS resources.
+## Overview
 
-The application uses several AWS resources, including Lambda functions and an API Gateway API. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
+This pipeline receives customer support requests via API Gateway, stores them in DynamoDB, processes them asynchronously using AWS Bedrock (Amazon Nova Lite), and notifies the support team via SNS.
 
-If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
-The AWS Toolkit is an open source plug-in for popular IDEs that uses the SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds a simplified step-through debugging experience for Lambda function code. See the following links to get started.
+### Architecture
 
-* [CLion](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [GoLand](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [IntelliJ](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [WebStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [Rider](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PhpStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PyCharm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [RubyMine](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [DataGrip](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [VS Code](https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/welcome.html)
-* [Visual Studio](https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/welcome.html)
+1. **Support Request Receiver** (`support-request-receiver.ts`)
+   - Receives POST requests at `/support-request`
+   - Creates ticket records in DynamoDB
+   - Queues tickets for processing via SQS
 
-## Deploy the sample application
+2. **Support Request Processor** (`support-request-processor.ts`)
+   - Processes tickets from SQS queue
+   - Uses AWS Bedrock to analyze ticket urgency and generate responses
+   - Updates tickets in DynamoDB with analytics
+   - Sends notifications to support team via SNS
 
-The Serverless Application Model Command Line Interface (SAM CLI) is an extension of the AWS CLI that adds functionality for building and testing Lambda applications. It uses Docker to run your functions in an Amazon Linux environment that matches Lambda. It can also emulate your application's build environment and API.
+### AWS Resources
 
-To use the SAM CLI, you need the following tools.
+- **API Gateway**: REST API endpoint for receiving support requests
+- **Lambda Functions**: Two functions for receiving and processing tickets
+- **DynamoDB**: Ticket storage with server-side encryption
+- **SQS**: Queue with dead-letter queue for reliable processing
+- **SNS**: Topics for success and failure notifications
 
-* SAM CLI - [Install the SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
-* Node.js - [Install Node.js 22](https://nodejs.org/en/), including the NPM package management tool.
-* Docker - [Install Docker community edition](https://hub.docker.com/search/?type=edition&offering=community)
+## Prerequisites
 
-To build and deploy your application for the first time, run the following in your shell:
+- AWS CLI configured
+- SAM CLI installed
+- Node.js 22+
+- Docker (for local testing)
+
+## Deployment
+
+Build and deploy the application:
 
 ```bash
 sam build
 sam deploy --guided
 ```
 
-The first command will build the source of your application. The second command will package and deploy your application to AWS, with a series of prompts:
+The API Gateway endpoint URL will be displayed in the deployment output.
 
-* **Stack Name**: The name of the stack to deploy to CloudFormation. This should be unique to your account and region, and a good starting point would be something matching your project name.
-* **AWS Region**: The AWS region you want to deploy your app to.
-* **Confirm changes before deploy**: If set to yes, any change sets will be shown to you before execution for manual review. If set to no, the AWS SAM CLI will automatically deploy application changes.
-* **Allow SAM CLI IAM role creation**: Many AWS SAM templates, including this example, create AWS IAM roles required for the AWS Lambda function(s) included to access AWS services. By default, these are scoped down to minimum required permissions. To deploy an AWS CloudFormation stack which creates or modifies IAM roles, the `CAPABILITY_IAM` value for `capabilities` must be provided. If permission isn't provided through this prompt, to deploy this example you must explicitly pass `--capabilities CAPABILITY_IAM` to the `sam deploy` command.
-* **Save arguments to samconfig.toml**: If set to yes, your choices will be saved to a configuration file inside the project, so that in the future you can just re-run `sam deploy` without parameters to deploy changes to your application.
+## Local Development
 
-You can find your API Gateway Endpoint URL in the output values displayed after deployment.
-
-## Use the SAM CLI to build and test locally
-
-Build your application with the `sam build` command.
+Build the application:
 
 ```bash
-AI-Powered Customer Support Pipeline$ sam build
+sam build
 ```
 
-The SAM CLI installs dependencies defined in `hello-world/package.json`, compiles TypeScript with esbuild, creates a deployment package, and saves it in the `.aws-sam/build` folder.
-
-Test a single function by invoking it directly with a test event. An event is a JSON document that represents the input that the function receives from the event source. Test events are included in the `events` folder in this project.
-
-Run functions locally and invoke them with the `sam local invoke` command.
+Start the API locally:
 
 ```bash
-AI-Powered Customer Support Pipeline$ sam local invoke HelloWorldFunction --event events/event.json
+sam local start-api
 ```
 
-The SAM CLI can also emulate your application's API. Use the `sam local start-api` to run the API locally on port 3000.
+Test individual functions:
 
 ```bash
-AI-Powered Customer Support Pipeline$ sam local start-api
-AI-Powered Customer Support Pipeline$ curl http://localhost:3000/
+sam local invoke SupportRequestReceiverFunction --event events/new-ticket.json
+sam local invoke SupportRequestProcessorFunction --event events/sqs-event.json
 ```
 
-The SAM CLI reads the application template to determine the API's routes and the functions that they invoke. The `Events` property on each function's definition includes the route and method for each path.
+## Project Structure
 
-```yaml
-      Events:
-        HelloWorld:
-          Type: Api
-          Properties:
-            Path: /hello
-            Method: get
+```
+.
+├── lambdas/
+│   ├── handlers/
+│   │   ├── support-request-receiver.ts  # API Gateway handler
+│   │   └── support-request-processor.ts # SQS handler
+│   └── shared/
+│       └── types.ts                     # TypeScript types
+├── events/
+│   └── new-ticket.json                  # Test event
+├── template.yaml                        # SAM infrastructure template
+└── samconfig.toml                       # SAM configuration
 ```
 
-## Add a resource to your application
-The application template uses AWS Serverless Application Model (AWS SAM) to define application resources. AWS SAM is an extension of AWS CloudFormation with a simpler syntax for configuring common serverless application resources such as functions, triggers, and APIs. For resources not included in [the SAM specification](https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md), you can use standard [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html) resource types.
+## API Usage
 
-## Fetch, tail, and filter Lambda function logs
+### Create Support Ticket
 
-To simplify troubleshooting, SAM CLI has a command called `sam logs`. `sam logs` lets you fetch logs generated by your deployed Lambda function from the command line. In addition to printing the logs on the terminal, this command has several nifty features to help you quickly find the bug.
+**Endpoint:** `POST /support-request`
 
-`NOTE`: This command works for all AWS Lambda functions; not just the ones you deploy using SAM.
-
-```bash
-AI-Powered Customer Support Pipeline$ sam logs -n HelloWorldFunction --stack-name AI-Powered Customer Support Pipeline --tail
+**Request:**
+```json
+{
+  "content": "I'm having trouble logging into my account",
+  "customerId": "customer-123"
+}
 ```
 
-You can find more information and examples about filtering Lambda function logs in the [SAM CLI Documentation](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-logging.html).
-
-## Unit tests
-
-Tests are defined in the `hello-world/tests` folder in this project. Use NPM to install the [Jest test framework](https://jestjs.io/) and run unit tests.
-
-```bash
-AI-Powered Customer Support Pipeline$ cd hello-world
-hello-world$ npm install
-hello-world$ npm run test
+**Response:**
+```json
+{
+  "message": "new ticket has been created for this request",
+  "ticketId": "uuid-here"
+}
 ```
 
 ## Cleanup
 
-To delete the sample application that you created, use the AWS CLI. Assuming you used your project name for the stack name, you can run the following:
+Delete the deployed stack:
 
 ```bash
-sam delete --stack-name AI-Powered Customer Support Pipeline
+sam delete --stack-name AI-Powered-Customer-Support-Pipeline
 ```
 
-## Resources
+## Future Work
 
-See the [AWS SAM developer guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html) for an introduction to SAM specification, the SAM CLI, and serverless application concepts.
+This section outlines planned improvements and enhancements for the AI-Powered Customer Support Pipeline.
 
-Next, you can use AWS Serverless Application Repository to deploy ready to use Apps that go beyond hello world samples and learn how authors developed their applications: [AWS Serverless Application Repository main page](https://aws.amazon.com/serverless/serverlessrepo/)
+### 1. Enhanced Error Handling and Observability
+
+**Current Issues:**
+- Bedrock failures silently fall back to default values without proper error tracking
+- No CloudWatch alarms or custom metrics for monitoring
+- Partial batch failures in SQS processing are not handled gracefully
+- Failed SNS topic is configured but never utilized
+
+**Planned Improvements:**
+- **Structured Error Handling**: Implement proper error types and error handling patterns
+  - Create custom error classes for different failure scenarios
+  - Add retry logic for transient failures (Bedrock API, DynamoDB throttling)
+  - Implement exponential backoff for retries
+  
+- **Failed Notification System**: Utilize the `SupportFailedSnsTopic` for error notifications
+  - Publish to failed topic when ticket processing fails after retries
+  - Include error details and ticket information in failure notifications
+  
+- **CloudWatch Metrics**: Add custom metrics for better observability
+  - Track success/failure counts for ticket processing
+  - Monitor processing time and latency
+  - Track Bedrock API call success rates
+  - Monitor queue depth and processing rates
+  
+- **CloudWatch Alarms**: Set up proactive monitoring
+  - Alarm on DLQ message count (indicates processing failures)
+  - Alarm on error rate thresholds
+  - Alarm on Lambda function errors
+  - Alarm on Bedrock API failures
+  
+- **Partial Batch Failure Handling**: Implement proper SQS batch processing
+  - Use `reportBatchItemFailures` to handle partial batch failures
+  - Only retry failed messages, not entire batches
+  
+- **Distributed Tracing**: Enable AWS X-Ray for end-to-end tracing
+  - Track requests across all services (API Gateway → Lambda → SQS → Lambda → DynamoDB → SNS)
+  - Identify performance bottlenecks and errors
+
+### 2. Security and Validation Enhancements
+
+**Current Issues:**
+- No authentication/authorization on API endpoint
+- Hardcoded email address in template.yaml
+- Customer ID is a placeholder value
+- No input sanitization or validation
+- No CORS configuration
+- No request size limits
+
+**Planned Improvements:**
+- **API Authentication & Authorization**:
+  - Add API Gateway authorizer (AWS Cognito, API Key, or Lambda authorizer)
+  - Implement role-based access control (RBAC)
+  - Extract customer ID from authenticated user context (Cognito claims or custom headers)
+  - Add API key management for service-to-service communication
+  
+- **Configuration Management**:
+  - Move email addresses to AWS Systems Manager Parameter Store or Secrets Manager
+  - Use SAM template parameters for environment-specific configuration
+  - Remove hardcoded values from infrastructure code
+  
+- **Input Validation**:
+  - Add JSON Schema validation using API Gateway request validation
+  - Implement input sanitization to prevent injection attacks
+  - Add content length limits and validation
+  - Validate urgency levels and ticket content format
+  
+- **CORS Configuration**:
+  - Configure proper CORS headers for API Gateway
+  - Support preflight requests
+  - Restrict allowed origins based on environment
+  
+- **Rate Limiting & Throttling**:
+  - Implement API Gateway throttling (per-key or per-account)
+  - Add usage plans and API keys
+  - Configure burst and steady-state rate limits
+  
+- **Security Best Practices**:
+  - Enable AWS WAF (Web Application Firewall) for API Gateway
+  - Implement request signing validation
+  - Add security headers (X-Content-Type-Options, X-Frame-Options, etc.)
+  - Enable VPC endpoints for AWS service communication (if using VPC)
+
+### 3. Testing and Documentation
+
+**Current Issues:**
+- No unit tests (Jest is configured but no test files exist)
+- No integration tests
+- README contains outdated information (references hello-world)
+- No API documentation
+- Missing deployment and development guides
+
+**Planned Improvements:**
+- **Unit Testing**:
+  - Create comprehensive unit tests for `SupportRequestReceiverFunction`
+    - Test request validation
+    - Test DynamoDB operations
+    - Test SQS message sending
+    - Test error handling scenarios
+  
+  - Create comprehensive unit tests for `SupportRequestProcessorFunction`
+    - Test Bedrock API integration (with mocks)
+    - Test analytics generation logic
+    - Test DynamoDB update operations
+    - Test SNS notification publishing
+    - Test error handling and fallback scenarios
+  
+  - Add test coverage reporting
+  - Set up CI/CD pipeline with automated testing
+  
+- **Integration Testing**:
+  - Create end-to-end integration tests
+  - Test full flow: API → Lambda → SQS → Lambda → DynamoDB → SNS
+  - Use AWS SAM local for local integration testing
+  - Test with real AWS services in a test environment
+  
+- **Documentation Updates**:
+  - Update README with current architecture and flow
+  - Document all environment variables and configuration options
+  - Add API documentation with request/response examples
+  - Create deployment guide with step-by-step instructions
+  - Add troubleshooting guide for common issues
+  - Document development setup and local testing procedures
+  
+- **API Documentation**:
+  - Create OpenAPI/Swagger specification for the API
+  - Document all endpoints, request/response schemas
+  - Add example requests and responses
+  - Document error codes and error responses
+  - Include authentication requirements
+  
+- **Additional Documentation**:
+  - Architecture diagram (using AWS Architecture Icons)
+  - Data flow diagrams
+  - Security documentation
+  - Operational runbooks
+  - Cost optimization guide
+
+### Additional Improvements
+
+- **Performance Optimization**:
+  - Implement connection pooling for AWS SDK clients
+  - Add caching layer (ElastiCache) for frequently accessed data
+  - Optimize DynamoDB queries and indexes
+  - Consider using provisioned concurrency for Lambda functions
+  
+- **Cost Optimization**:
+  - Review and optimize Lambda memory allocation
+  - Implement DynamoDB on-demand to provisioned capacity transition for predictable workloads
+  - Add cost monitoring and alerts
+  - Optimize Bedrock model selection based on use case
+  
+- **Feature Enhancements**:
+  - Add support for ticket attachments
+  - Implement ticket status updates and webhooks
+  - Add support for multiple languages in ticket processing
+  - Implement ticket categorization and tagging
+  - Add support for ticket escalation workflows
+  - Implement customer feedback collection
