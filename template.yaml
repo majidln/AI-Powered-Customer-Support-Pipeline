@@ -11,8 +11,6 @@ Globals:
     Runtime: nodejs24.x
     Timeout: 30
     CodeUri: lambdas/
-
-    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
     LoggingConfig:
       LogFormat: JSON
 Resources:
@@ -32,7 +30,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref SupportTicketTable
         - SQSSendMessagePolicy:
-            QueueName: SupportRequestQueue
+            QueueName: !GetAtt SupportRequestQueue.QueueName
       Environment:
         Variables:
           SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
@@ -40,9 +38,12 @@ Resources:
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
+        EntryPoints:
+          - handlers/support-request-receiver.ts
         Minify: true
         Target: es2020
         Sourcemap: true
+        Bundle: true
 
   SupportRequestProcessorFunction:
     Type: AWS::Serverless::Function
@@ -59,15 +60,30 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SupportTicketTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt SupportSnsTopic.TopicName
+        - Statement:
+            - Effect: Allow
+              Action: 
+                - bedrock:InvokeModel
+              Resource:
+                - 'arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v1'
+
       Environment:
         Variables:
           SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
+          BEDROCK_MODEL_ID: amazon.titan-embed-text-v1
+          SNS_TOPIC_ARN: !GetAtt SupportSnsTopic.TopicArn
+          SNS_FAILED_TOPIC_ARN: !GetAtt SupportFailedSnsTopic.TopicArn
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
+        EntryPoints:
+          - handlers/support-request-processor.ts
         Minify: true
         Target: es2020
         Sourcemap: true
+        Bundle: true
 
   SupportTicketTable:
     Type: AWS::DynamoDB::Table
@@ -89,7 +105,6 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
-      QueueName: SupportRequestQueue
       VisibilityTimeout: 30
       MessageRetentionPeriod: 1209600  # 14 days in seconds
       ReceiveMessageWaitTimeSeconds: 20  # Long polling
@@ -102,17 +117,43 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
-      QueueName: SupportRequestDLQ
       MessageRetentionPeriod: 1209600  # 14 days
+
+  SupportSnsTopic:
+    Type: AWS::SNS::Topic
+  
+  SupportFailedSnsTopic:
+    Type: AWS::SNS::Topic
+
+  AdminEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: kahov41785@feanzier.com
+      Protocol: email
+      TopicArn: !GetAtt SupportSnsTopic.TopicArn
 
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL for Prod stage for Customer Support Pipeline
       function
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/"
+  
+  SnsTopicName:
+    Description: SNS topic name for Support Team Notifications
+    Value: !GetAtt SupportSnsTopic.TopicName
+  
+  SnsTopicArn:
+    Description: SNS topic ARN for Support Team Notifications
+    Value: !Ref SupportSnsTopic
+  
   SupportRequestReceiverFunction:
-    Description: Hello World Lambda Function ARN
+    Description: Lambda Function ARN for Support Request Receiver
     Value: !GetAtt SupportRequestReceiverFunction.Arn
+
+  SupportRequestProcessorFunction:
+    Description: Lambda Function ARN for Support Request Processor
+    Value: !GetAtt SupportRequestProcessorFunction.Arn
+  
   SupportRequestQueue:
     Description: Support Request Queue ARN
     Value: !GetAtt SupportRequestQueue.Arn
