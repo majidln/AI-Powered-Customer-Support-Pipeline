@@ -6,6 +6,10 @@ Parameters:
   StageName:
     Type: String
     Default: Dev
+  AdminEmail:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: Admin email to receive tickets notification from SSM Parameter Store
+    Default: /support-pipeline/admin-email
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
@@ -136,7 +140,7 @@ Resources:
   AdminEmailSubscription:
     Type: AWS::SNS::Subscription
     Properties:
-      Endpoint: kahov41785@feanzier.com
+      Endpoint: !Ref AdminEmail
       Protocol: email
       TopicArn: !GetAtt SupportSnsTopic.TopicArn
 
