@@ -43,3 +43,7 @@ export interface CreateTicketResponse {
     message: string;
     ticketId: string;
 }
+
+export interface FetchTicketResponse {
+    response?: string;
+}

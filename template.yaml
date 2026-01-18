@@ -56,7 +56,34 @@ Resources:
         Target: es2020
         Sourcemap: true
         Bundle: true
-
+  FetchSupportRequestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/fetch-support-ticket.handler
+      Architectures:
+      - x86_64
+      Events:
+        FetchSupportRequest:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /support-request
+            Method: get
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SupportTicketTable
+      Environment:
+        Variables:
+          SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - handlers/fetch-support-ticket.ts
+        Minify: true
+        Target: es2020
+        Sourcemap: true
+        Bundle: true
   SupportRequestProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -71,16 +98,15 @@ Resources:
             BatchSize: 10
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: SupportTicketTable
+            TableName: !Ref SupportTicketTable
         - SNSPublishMessagePolicy:
-            TopicName: SupportSnsTopic
+            TopicName: !GetAtt SupportSnsTopic.TopicName
         - Statement:
             - Effect: Allow
               Action: 
                 - bedrock:InvokeModel
               Resource:
                 - 'arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0'
-
       Environment:
         Variables:
           SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
