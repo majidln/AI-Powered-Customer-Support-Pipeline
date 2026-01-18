@@ -2,8 +2,10 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   AI-Powered Customer Support Pipeline
-
-  Sample SAM Template for AI-Powered Customer Support Pipeline
+Parameters:
+  StageName:
+    Type: String
+    Default: Dev
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
@@ -14,6 +16,11 @@ Globals:
     LoggingConfig:
       LogFormat: JSON
 Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+    
   SupportRequestReceiverFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -22,8 +29,9 @@ Resources:
       - x86_64
       Events:
         ReceiveSupportRequest:
-          Type: Api
+          Type: HttpApi
           Properties:
+            ApiId: !Ref HttpApi
             Path: /support-request
             Method: post
       Policies:
@@ -59,9 +67,9 @@ Resources:
             BatchSize: 10
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref SupportTicketTable
+            TableName: SupportTicketTable
         - SNSPublishMessagePolicy:
-            TopicName: !GetAtt SupportSnsTopic.TopicName
+            TopicName: SupportSnsTopic
         - Statement:
             - Effect: Allow
               Action: 
@@ -133,10 +141,14 @@ Resources:
       TopicArn: !GetAtt SupportSnsTopic.TopicArn
 
 Outputs:
-  ApiEndpoint:
-    Description: API Gateway endpoint URL for Prod stage for Customer Support Pipeline
-      function
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/"
+  HttpApiUrl:
+    Description: API Gateway endpoint URL
+    Value:
+      Fn::Sub: 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${StageName}/'
+  HttpApiId:
+    Description: Api id of HttpApi
+    Value:
+      Ref: HttpApi
   
   SnsTopicName:
     Description: SNS topic name for Support Team Notifications

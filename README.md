@@ -91,8 +91,7 @@ sam local invoke SupportRequestProcessorFunction --event events/sqs-event.json
 **Request:**
 ```json
 {
-  "content": "I'm having trouble logging into my account",
-  "customerId": "customer-123"
+  "content": "I'm having trouble logging into my account"
 }
 ```
 
