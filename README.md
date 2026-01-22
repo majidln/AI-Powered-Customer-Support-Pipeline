@@ -8,6 +8,8 @@ This pipeline receives customer support requests via API Gateway, stores them in
 
 ### Architecture
 
+![Architecture Diagram](images.png)
+
 1. **Support Request Receiver** (`support-request-receiver.ts`)
    - Receives POST requests at `/support-request`
    - Creates ticket records in DynamoDB
