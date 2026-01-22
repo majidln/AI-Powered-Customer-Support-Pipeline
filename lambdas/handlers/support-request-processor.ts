@@ -3,6 +3,7 @@ import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { SQSEvent } from "aws-lambda";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { TicketStatus, SupportTicketMessage, TicketAnalytics, Urgency } from "../shared/types";
+import { logBedrockTicketProcessorError } from "../shared/errors-handler";
 import { PublishCommand, SNSClient } from "@aws-sdk/client-sns";
 
 const ddClient = new DynamoDBClient({});
@@ -93,8 +94,13 @@ Respond in JSON format:
         }
         throw new Error('Could not parse JSON from response');
     } catch (err) {
-        console.error(`Error generating analytics:`, err);
+        await logBedrockTicketProcessorError(message.ticketId, err, {
+            modelId,
+            promptLength: prompt.length,
+            ticketContent: message.content.substring(0, 200)
+        });
         
+        // Return fallback response
         return {
             urgency: Urgency.MEDIUM,
             response: 'Thank you for contacting support. We have received your request and will get back to you soon.'

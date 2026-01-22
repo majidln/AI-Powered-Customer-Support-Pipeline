@@ -13,19 +13,26 @@ This pipeline receives customer support requests via API Gateway, stores them in
    - Creates ticket records in DynamoDB
    - Queues tickets for processing via SQS
 
-2. **Support Request Processor** (`support-request-processor.ts`)
+2. **Fetch Support Ticket** (`fetch-support-ticket.ts`)
+   - Receives GET requests at `/support-request?ticketId=<id>`
+   - Retrieves ticket information from DynamoDB
+   - Returns the AI-generated response for the ticket
+
+3. **Support Request Processor** (`support-request-processor.ts`)
    - Processes tickets from SQS queue
-   - Uses AWS Bedrock to analyze ticket urgency and generate responses
+   - Uses AWS Bedrock (Amazon Nova Lite) to analyze ticket urgency and generate responses
    - Updates tickets in DynamoDB with analytics
    - Sends notifications to support team via SNS
+   - Logs errors to a dedicated CloudWatch log group for monitoring
 
 ### AWS Resources
 
-- **API Gateway**: REST API endpoint for receiving support requests
-- **Lambda Functions**: Two functions for receiving and processing tickets
+- **API Gateway**: HTTP API with endpoints for creating and fetching support tickets
+- **Lambda Functions**: Three functions for receiving, fetching, and processing tickets
 - **DynamoDB**: Ticket storage with server-side encryption
 - **SQS**: Queue with dead-letter queue for reliable processing
-- **SNS**: Topics for success and failure notifications
+- **SNS**: Topics for ticket notifications and error alerts
+- **CloudWatch**: Log groups, metric filters, and alarms for monitoring and alerting
 
 ## Prerequisites
 
@@ -45,6 +52,12 @@ sam deploy --guided
 
 The API Gateway endpoint URL will be displayed in the deployment output.
 
+**Important:** After deployment, subscribe to the SNS topics for notifications:
+- **Support Ticket Notifications**: Subscribe to receive notifications when tickets are processed
+- **Bedrock Error Alerts**: Subscribe to receive alerts when Bedrock processing errors occur
+
+Use the SNS Topic ARNs from the deployment outputs to subscribe via AWS Console, CLI, or SDK.
+
 ## Local Development
 
 Build the application:
@@ -63,6 +76,7 @@ Test individual functions:
 
 ```bash
 sam local invoke SupportRequestReceiverFunction --event events/new-ticket.json
+sam local invoke FetchSupportRequestFunction --event events/fetch-ticket.json
 sam local invoke SupportRequestProcessorFunction --event events/sqs-event.json
 ```
 
@@ -72,10 +86,12 @@ sam local invoke SupportRequestProcessorFunction --event events/sqs-event.json
 .
 ├── lambdas/
 │   ├── handlers/
-│   │   ├── support-request-receiver.ts  # API Gateway handler
+│   │   ├── support-request-receiver.ts  # POST endpoint handler
+│   │   ├── fetch-support-ticket.ts      # GET endpoint handler
 │   │   └── support-request-processor.ts # SQS handler
 │   └── shared/
-│       └── types.ts                     # TypeScript types
+│       ├── types.ts                     # TypeScript types
+│       └── errors-handler.ts            # Error logging utilities
 ├── events/
 │   └── new-ticket.json                  # Test event
 ├── template.yaml                        # SAM infrastructure template
@@ -103,6 +119,63 @@ sam local invoke SupportRequestProcessorFunction --event events/sqs-event.json
 }
 ```
 
+### Fetch Support Ticket
+
+**Endpoint:** `GET /support-request?ticketId=<ticket-id>`
+
+**Response:**
+```json
+{
+  "response": "Thank you for contacting support. We have received your request and will get back to you soon."
+}
+```
+
+**Note:** The response field will be `undefined` if the ticket hasn't been processed yet by the AI processor.
+
+## Monitoring and Observability
+
+### CloudWatch Logs
+
+The application uses CloudWatch Logs for centralized logging:
+
+- **Lambda Function Logs**: Each Lambda function automatically logs to CloudWatch Logs
+  - Log format: JSON (configured in `template.yaml`)
+  - Log retention: Default (never expire) for Lambda logs
+
+- **Bedrock Error Log Group**: Dedicated log group for Bedrock processing errors
+  - Log Group Name: `{StackName}-BedrockTicketProcessorErrorLogGroup`
+  - Retention: 30 days
+  - Contains structured error logs with:
+    - Error details (name, message, stack trace)
+    - Ticket ID and context
+    - Bedrock model ID and request metadata
+    - Timestamp and environment information
+
+
+### CloudWatch Metrics
+
+The application includes custom CloudWatch metrics:
+
+- **BedrockTicketProcessorErrors**: Tracks errors from the Bedrock ticket processor
+  - Namespace: `SupportPipeline`
+  - Metric Name: `BedrockTicketProcessorErrors`
+  - Filter Pattern: `{ $.level = "ERROR" && $.service = "BedrockTicketProcessor" }`
+  - Increments by 1 for each error logged
+
+**Viewing Metrics:**
+- AWS Console: CloudWatch → Metrics → Custom Namespaces → SupportPipeline
+- AWS CLI: `aws cloudwatch get-metric-statistics --namespace SupportPipeline --metric-name BedrockTicketProcessorErrors`
+
+### CloudWatch Alarms
+
+**Bedrock Ticket Processor Error Alarm:**
+- **Alarm Name**: `{StackName}-BedrockTicketProcessorErrors`
+- **Metric**: `BedrockTicketProcessorErrors` (Sum)
+- **Threshold**: > 5 errors in 5 minutes
+- **Action**: Sends notification to `BedrockTicketProcessorErrorAlertTopic` SNS topic
+- **Missing Data**: Treated as not breaching (no alarm when no data)
+
+
 ## Cleanup
 
 Delete the deployed stack:
@@ -113,163 +186,27 @@ sam delete --stack-name AI-Powered-Customer-Support-Pipeline
 
 ## Future Work
 
-This section outlines planned improvements and enhancements for the AI-Powered Customer Support Pipeline.
+**API Authentication & Authorization**
+- Add API Gateway authorizer (AWS Cognito or Lambda authorizer) to secure endpoints
+- Extract customer ID from authenticated user context instead of placeholder values
+- Implement API key management for service-to-service communication
 
-### 1. Enhanced Error Handling and Observability
+**Enhanced Testing & Quality Assurance**
+- Create comprehensive unit tests for all Lambda functions with Jest
+- Add integration tests for end-to-end flow validation
+- Set up CI/CD pipeline with automated testing and deployment
 
-**Current Issues:**
-- Bedrock failures silently fall back to default values without proper error tracking
-- No CloudWatch alarms or custom metrics for monitoring
-- Partial batch failures in SQS processing are not handled gracefully
-- Failed SNS topic is configured but never utilized
+**Advanced Error Handling & Retry Logic**
+- Implement retry logic with exponential backoff for transient failures (Bedrock API, DynamoDB throttling)
+- Add partial batch failure handling for SQS processing using `reportBatchItemFailures`
+- Create custom error classes for better error categorization and handling
 
-**Planned Improvements:**
-- **Structured Error Handling**: Implement proper error types and error handling patterns
-  - Create custom error classes for different failure scenarios
-  - Add retry logic for transient failures (Bedrock API, DynamoDB throttling)
-  - Implement exponential backoff for retries
-  
-- **Failed Notification System**: Utilize the `SupportFailedSnsTopic` for error notifications
-  - Publish to failed topic when ticket processing fails after retries
-  - Include error details and ticket information in failure notifications
-  
-- **CloudWatch Metrics**: Add custom metrics for better observability
-  - Track success/failure counts for ticket processing
-  - Monitor processing time and latency
-  - Track Bedrock API call success rates
-  - Monitor queue depth and processing rates
-  
-- **CloudWatch Alarms**: Set up proactive monitoring
-  - Alarm on DLQ message count (indicates processing failures)
-  - Alarm on error rate thresholds
-  - Alarm on Lambda function errors
-  - Alarm on Bedrock API failures
-  
-- **Partial Batch Failure Handling**: Implement proper SQS batch processing
-  - Use `reportBatchItemFailures` to handle partial batch failures
-  - Only retry failed messages, not entire batches
-  
-- **Distributed Tracing**: Enable AWS X-Ray for end-to-end tracing
-  - Track requests across all services (API Gateway → Lambda → SQS → Lambda → DynamoDB → SNS)
-  - Identify performance bottlenecks and errors
+**Additional Monitoring & Observability**
+- Add custom CloudWatch metrics for ticket processing success rates and latency
+- Set up alarms for DLQ message count and Lambda function errors
+- Enable AWS X-Ray for distributed tracing across all services
 
-### 2. Security and Validation Enhancements
-
-**Current Issues:**
-- No authentication/authorization on API endpoint
-- Hardcoded email address in template.yaml
-- Customer ID is a placeholder value
-- No input sanitization or validation
-- No CORS configuration
-- No request size limits
-
-**Planned Improvements:**
-- **API Authentication & Authorization**:
-  - Add API Gateway authorizer (AWS Cognito, API Key, or Lambda authorizer)
-  - Implement role-based access control (RBAC)
-  - Extract customer ID from authenticated user context (Cognito claims or custom headers)
-  - Add API key management for service-to-service communication
-  
-- **Configuration Management**:
-  - Move email addresses to AWS Systems Manager Parameter Store or Secrets Manager
-  - Use SAM template parameters for environment-specific configuration
-  - Remove hardcoded values from infrastructure code
-  
-- **Input Validation**:
-  - Add JSON Schema validation using API Gateway request validation
-  - Implement input sanitization to prevent injection attacks
-  - Add content length limits and validation
-  - Validate urgency levels and ticket content format
-  
-- **CORS Configuration**:
-  - Configure proper CORS headers for API Gateway
-  - Support preflight requests
-  - Restrict allowed origins based on environment
-  
-- **Rate Limiting & Throttling**:
-  - Implement API Gateway throttling (per-key or per-account)
-  - Add usage plans and API keys
-  - Configure burst and steady-state rate limits
-  
-- **Security Best Practices**:
-  - Enable AWS WAF (Web Application Firewall) for API Gateway
-  - Implement request signing validation
-  - Add security headers (X-Content-Type-Options, X-Frame-Options, etc.)
-  - Enable VPC endpoints for AWS service communication (if using VPC)
-
-### 3. Testing and Documentation
-
-**Current Issues:**
-- No unit tests (Jest is configured but no test files exist)
-- No integration tests
-- README contains outdated information (references hello-world)
-- No API documentation
-- Missing deployment and development guides
-
-**Planned Improvements:**
-- **Unit Testing**:
-  - Create comprehensive unit tests for `SupportRequestReceiverFunction`
-    - Test request validation
-    - Test DynamoDB operations
-    - Test SQS message sending
-    - Test error handling scenarios
-  
-  - Create comprehensive unit tests for `SupportRequestProcessorFunction`
-    - Test Bedrock API integration (with mocks)
-    - Test analytics generation logic
-    - Test DynamoDB update operations
-    - Test SNS notification publishing
-    - Test error handling and fallback scenarios
-  
-  - Add test coverage reporting
-  - Set up CI/CD pipeline with automated testing
-  
-- **Integration Testing**:
-  - Create end-to-end integration tests
-  - Test full flow: API → Lambda → SQS → Lambda → DynamoDB → SNS
-  - Use AWS SAM local for local integration testing
-  - Test with real AWS services in a test environment
-  
-- **Documentation Updates**:
-  - Update README with current architecture and flow
-  - Document all environment variables and configuration options
-  - Add API documentation with request/response examples
-  - Create deployment guide with step-by-step instructions
-  - Add troubleshooting guide for common issues
-  - Document development setup and local testing procedures
-  
-- **API Documentation**:
-  - Create OpenAPI/Swagger specification for the API
-  - Document all endpoints, request/response schemas
-  - Add example requests and responses
-  - Document error codes and error responses
-  - Include authentication requirements
-  
-- **Additional Documentation**:
-  - Architecture diagram (using AWS Architecture Icons)
-  - Data flow diagrams
-  - Security documentation
-  - Operational runbooks
-  - Cost optimization guide
-
-### Additional Improvements
-
-- **Performance Optimization**:
-  - Implement connection pooling for AWS SDK clients
-  - Add caching layer (ElastiCache) for frequently accessed data
-  - Optimize DynamoDB queries and indexes
-  - Consider using provisioned concurrency for Lambda functions
-  
-- **Cost Optimization**:
-  - Review and optimize Lambda memory allocation
-  - Implement DynamoDB on-demand to provisioned capacity transition for predictable workloads
-  - Add cost monitoring and alerts
-  - Optimize Bedrock model selection based on use case
-  
-- **Feature Enhancements**:
-  - Add support for ticket attachments
-  - Implement ticket status updates and webhooks
-  - Add support for multiple languages in ticket processing
-  - Implement ticket categorization and tagging
-  - Add support for ticket escalation workflows
-  - Implement customer feedback collection
+**Feature Enhancements**
+- Add support for ticket attachments and file uploads
+- Implement ticket status updates and webhook notifications
+- Add support for multiple languages in ticket processing

@@ -3,10 +3,14 @@
   "version": "0.0.1",
   "scripts": {
     "build": "tsc",
-    "watch": "tsc -w"
+    "watch": "tsc -w",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.968.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.971.0",
     "@aws-sdk/client-dynamodb": "^3.966.0",
     "@aws-sdk/client-sns": "^3.968.0",
     "@aws-sdk/client-sqs": "^3.967.0",

@@ -1,17 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: >
-  AI-Powered Customer Support Pipeline
+Description: AI-Powered Customer Support Pipeline
 Parameters:
   StageName:
     Type: String
     Default: Dev
-  AdminEmail:
-    Type: AWS::SSM::Parameter::Value<String>
-    Description: Admin email to receive tickets notification from SSM Parameter Store
-    Default: /support-pipeline/admin-email
 
-# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Function:
     Runtime: nodejs24.x
@@ -19,15 +13,18 @@ Globals:
     CodeUri: lambdas/
     LoggingConfig:
       LogFormat: JSON
+
 Resources:
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: !Ref StageName
+      Name: !Sub '${AWS::StackName}-HttpApi'
     
   SupportRequestReceiverFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub '${AWS::StackName}-ReceiverFunction'
       Handler: handlers/support-request-receiver.handler
       Architectures:
       - x86_64
@@ -56,9 +53,11 @@ Resources:
         Target: es2020
         Sourcemap: true
         Bundle: true
+
   FetchSupportRequestFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub '${AWS::StackName}-FetchFunction'
       Handler: handlers/fetch-support-ticket.handler
       Architectures:
       - x86_64
@@ -84,9 +83,11 @@ Resources:
         Target: es2020
         Sourcemap: true
         Bundle: true
+
   SupportRequestProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub '${AWS::StackName}-ProcessorFunction'
       Handler: handlers/support-request-processor.handler
       Architectures:
       - x86_64
@@ -100,19 +101,27 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref SupportTicketTable
         - SNSPublishMessagePolicy:
-            TopicName: !GetAtt SupportSnsTopic.TopicName
+            TopicName: !GetAtt SupportTicketNotificationTopic.TopicName
         - Statement:
             - Effect: Allow
               Action: 
                 - bedrock:InvokeModel
               Resource:
                 - 'arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0'
+            - Effect: Allow
+              Action: 
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource:
+                - !GetAtt BedrockTicketProcessorErrorLogGroup.Arn
+                - !Sub '${BedrockTicketProcessorErrorLogGroup.Arn}:*'
       Environment:
         Variables:
           SUPPORT_TICKETS_TABLE: !Ref SupportTicketTable
           BEDROCK_MODEL_ID: amazon.nova-lite-v1:0
-          SNS_TOPIC_ARN: !GetAtt SupportSnsTopic.TopicArn
-          SNS_FAILED_TOPIC_ARN: !GetAtt SupportFailedSnsTopic.TopicArn
+          SNS_TOPIC_ARN: !GetAtt SupportTicketNotificationTopic.TopicArn
+          ERROR_LOG_GROUP_NAME: !Ref BedrockTicketProcessorErrorLogGroup
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -128,6 +137,7 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
+      TableName: !Sub '${AWS::StackName}-Table'
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -143,6 +153,7 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
+      QueueName: !Sub '${AWS::StackName}-RequestQueue'
       VisibilityTimeout: 30
       MessageRetentionPeriod: 1209600  # 14 days in seconds
       ReceiveMessageWaitTimeSeconds: 20  # Long polling
@@ -155,20 +166,56 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
+      QueueName: !Sub '${AWS::StackName}-RequestDLQ'
       MessageRetentionPeriod: 1209600  # 14 days
 
-  SupportSnsTopic:
+  SupportTicketNotificationTopic:
     Type: AWS::SNS::Topic
-  
-  SupportFailedSnsTopic:
-    Type: AWS::SNS::Topic
-
-  AdminEmailSubscription:
-    Type: AWS::SNS::Subscription
     Properties:
-      Endpoint: !Ref AdminEmail
-      Protocol: email
-      TopicArn: !GetAtt SupportSnsTopic.TopicArn
+      TopicName: !Sub '${AWS::StackName}-TicketNotifications'
+      Tags:
+      - Key: Purpose
+        Value: SupportTicketNotifications
+      - Key: SubscriptionType
+        Value: SelfService
+
+  BedrockTicketProcessorErrorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '${AWS::StackName}-BedrockTicketProcessorErrorLogGroup'
+      RetentionInDays: 30
+  
+  BedrockTicketProcessorErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref BedrockTicketProcessorErrorLogGroup
+      FilterPattern: '{ $.level = "ERROR" && $.service = "BedrockTicketProcessor" }'
+      MetricTransformations:
+        - MetricName: BedrockTicketProcessorErrors
+          MetricNamespace: SupportPipeline
+          MetricValue: 1
+          DefaultValue: 0
+  
+  BedrockTicketProcessorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-BedrockTicketProcessorErrors'
+      AlarmDescription: 'Alerts when Bedrock Ticket Processor errors occur'
+      MetricName: BedrockTicketProcessorErrors
+      Namespace: SupportPipeline
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref BedrockTicketProcessorErrorAlertTopic
+      TreatMissingData: notBreaching
+  
+  BedrockTicketProcessorErrorAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${AWS::StackName}-BedrockTicketProcessorErrorAlerts'
 
 Outputs:
   HttpApiUrl:
@@ -179,15 +226,7 @@ Outputs:
     Description: Api id of HttpApi
     Value:
       Ref: HttpApi
-  
-  SnsTopicName:
-    Description: SNS topic name for Support Team Notifications
-    Value: !GetAtt SupportSnsTopic.TopicName
-  
-  SnsTopicArn:
-    Description: SNS topic ARN for Support Team Notifications
-    Value: !Ref SupportSnsTopic
-  
+
   SupportRequestReceiverFunction:
     Description: Lambda Function ARN for Support Request Receiver
     Value: !GetAtt SupportRequestReceiverFunction.Arn
@@ -199,3 +238,17 @@ Outputs:
   SupportRequestQueue:
     Description: Support Request Queue ARN
     Value: !GetAtt SupportRequestQueue.Arn
+  
+  SupportTicketNotificationTopicArn:
+    Description: SNS Topic ARN for Support Ticket Notifications - Share this with admins to subscribe
+    Value: !Ref SupportTicketNotificationTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-TicketNotificationTopicArn'
+  
+  BedrockErrorAlertTopicArn:
+    Description: SNS Topic ARN for Bedrock Error Alerts - Share this with technical admins to subscribe
+    Value: !Ref BedrockTicketProcessorErrorAlertTopic
+
+  SubscriptionInstructions:
+    Description: Instructions for subscribing to notifications
+    Value: "Use the SNS Topic ARNs above to subscribe via AWS Console, CLI, or SDK. See deployment guide for details."
