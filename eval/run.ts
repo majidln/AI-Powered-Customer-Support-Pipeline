@@ -9,7 +9,7 @@
 // Each lives in src/; this file only runs them in sequence.
 
 import { collectAll } from "./src/collect.ts";
-import { API_URL, MODEL_ID, PRICE_PER_M_INPUT, PRICE_PER_M_OUTPUT, REGION, TABLE_NAME } from "./src/config.ts";
+import { API_URL, CONCURRENCY, MODEL_ID, PRICE_PER_M_INPUT, PRICE_PER_M_OUTPUT, REGION, TABLE_NAME } from "./src/config.ts";
 import { costPerTicket, waitForUsage } from "./src/cost.ts";
 import { printAccuracyBy, printLevels, printMatrix, printRedTeam, printReplyChecks } from "./src/print.ts";
 import { gitInfo, latency, sha1, ticketRows, writeReport } from "./src/report.ts";
@@ -52,7 +52,10 @@ async function main() {
 
     console.log("Waiting for Bedrock metrics in CloudWatch...");
     const finishedAt = new Date();
-    const usage = await waitForUsage(MODEL_ID, startedAt, finishedAt);
+    // Nothing reached the model, so no metrics will ever arrive: don't wait for them.
+    const usage = submissions.some((s) => s.ticketId)
+        ? await waitForUsage(MODEL_ID, startedAt, finishedAt)
+        : { invocations: 0, inputTokens: 0, outputTokens: 0, throttles: 0 };
 
     // Compute everything once.
     const matrix = confusionMatrix(collected);
@@ -71,6 +74,7 @@ async function main() {
             pricePerMillion: { input: PRICE_PER_M_INPUT, output: PRICE_PER_M_OUTPUT },
             region: REGION,
             apiUrl: API_URL,
+            concurrency: CONCURRENCY,
         },
         outcomes: { processed: count("processed"), fallback: count("fallback"), timeout: count("timeout"), "not-submitted": count("not-submitted") },
         accuracy: scoreAccuracy(collected),

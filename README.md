@@ -125,6 +125,8 @@ Run the evaluation against the deployed stack. Use the `HttpApiUrl` output from 
 cd eval && API_URL=https://<api-id>.execute-api.us-east-1.amazonaws.com/Dev TABLE_NAME=triage-desk-Table npx tsx run.ts --label v0
 ```
 
+On a new AWS account, whose Lambda concurrency limit is 10, add `CONCURRENCY=1`, or the receiver gets throttled and tickets show up as `not-submitted`.
+
 It takes a few minutes: about a minute to submit and collect, then a wait for the CloudWatch token metrics. It prints the results and writes three files to `eval/reports/`:
 - `<time>-<label>.json`: every ticket and score, raw
 - `<time>-<label>.md`: the tables for RESULTS.md

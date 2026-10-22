@@ -4,7 +4,9 @@
 export const API_URL = process.env.API_URL?.replace(/\/+$/, "");
 export const TABLE_NAME = process.env.TABLE_NAME;
 export const REGION = process.env.AWS_REGION ?? "us-east-1";
-export const CONCURRENCY = 3;
+// Tickets in flight at once. Lower it with CONCURRENCY=1 on an account whose
+// Lambda concurrency limit is low (new accounts start at 10).
+export const CONCURRENCY = Number(process.env.CONCURRENCY ?? 3);
 export const POLL_INTERVAL_MS = 5_000;
 export const COLLECT_TIMEOUT_MS = 180_000;
 

@@ -52,6 +52,7 @@ export interface Report {
         pricePerMillion: { input: number; output: number };
         region: string;
         apiUrl: string;
+        concurrency: number;
     };
     outcomes: Record<Outcome, number>;
     accuracy: Accuracy;
@@ -69,7 +70,8 @@ export interface Report {
 export function gitInfo(): { commit: string; dirty: boolean } {
     try {
         const commit = execSync("git rev-parse HEAD").toString().trim();
-        const dirty = execSync("git status --porcelain").toString().trim() !== "";
+        // Only changes to tracked files: new report files are always untracked.
+        const dirty = execSync("git status --porcelain --untracked-files=no").toString().trim() !== "";
         return { commit, dirty };
     } catch {
         return { commit: "unknown", dirty: true };
@@ -132,6 +134,7 @@ export function renderMarkdown(r: Report): string {
             ["Tickets", `\`${m.ticketsFile}\` (sha1 \`${m.ticketsSha.slice(0, 12)}\`)`],
             ["Model", `\`${m.modelId}\``],
             ["API", m.apiUrl],
+            ["Concurrency", m.concurrency],
         ],
     );
 
