@@ -1,4 +1,4 @@
-# AI-Powered Customer Support Pipeline
+# Triage Desk: an AI-Powered Customer Support Pipeline
 
 A serverless AWS application that processes customer support tickets using AI to automatically analyze urgency and generate responses.
 
@@ -96,9 +96,41 @@ sam local invoke SupportRequestProcessorFunction --event events/sqs-event.json
 │       └── errors-handler.ts            # Error logging utilities
 ├── events/
 │   └── new-ticket.json                  # Test event
+├── eval/                                # Evaluation: measures the deployed pipeline
+│   ├── tickets.jsonl                    # The frozen evaluation set
+│   ├── run.ts                           # Runner: submit → collect → score → cost → report
+│   ├── src/                             # One file per part
+│   └── reports/                         # One report per run
 ├── template.yaml                        # SAM infrastructure template
 └── samconfig.toml                       # SAM configuration
 ```
+
+## Evaluation
+
+`eval/` measures the deployed pipeline against a fixed set of labeled tickets: urgency accuracy, CRITICAL recall, reply checks, red-team results, latency and cost. How it works is explained in [PLANNING.md, Step 0](PLANNING.md#how-the-evaluation-works); results go in [RESULTS.md](RESULTS.md).
+
+```bash
+cd eval && npm install
+```
+
+Run the scoring tests (no AWS needed):
+
+```bash
+cd eval && npm test
+```
+
+Run the evaluation against the deployed stack. Use the `HttpApiUrl` output from `sam deploy`, and run nothing else on the same Bedrock model while it runs, because cost is read from account-wide metrics:
+
+```bash
+cd eval && API_URL=https://<api-id>.execute-api.us-east-1.amazonaws.com/Dev TABLE_NAME=triage-desk-Table npx tsx run.ts --label v0
+```
+
+It takes a few minutes: about a minute to submit and collect, then a wait for the CloudWatch token metrics. It prints the results and writes three files to `eval/reports/`:
+- `<time>-<label>.json`: every ticket and score, raw
+- `<time>-<label>.md`: the tables for RESULTS.md
+- `<time>-<label>-review.md`: every reply with a blank verdict, for the manual review. Created once and then yours to edit
+
+Commit before a real run: the report records the commit, and warns when there are uncommitted changes.
 
 ## API Usage
 
@@ -183,7 +215,7 @@ The application includes custom CloudWatch metrics:
 Delete the deployed stack:
 
 ```bash
-sam delete --stack-name AI-Powered-Customer-Support-Pipeline
+sam delete --stack-name triage-desk
 ```
 
 ## Future Work

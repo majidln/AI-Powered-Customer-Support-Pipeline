@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "AI-Powered-Customer-Support-Pipeline"
+stack_name = "triage-desk"
 region = "us-east-1"
 
 [default.build.parameters]

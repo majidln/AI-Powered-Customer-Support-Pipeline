@@ -32,6 +32,17 @@ One row per step. Targets are in [PLANNING.md §1.4](PLANNING.md#14-success-crit
 
 ## Step 0: baseline (v0)
 
+### Predictions
+
+Written down on 2026-10-22, before the first run.
+
+| Metric | Predicted | Actual |
+|---|---|---|
+| Urgency accuracy | 38 / 42 | |
+| CRITICAL recall | 8 / 8 | |
+| Replies with an invented policy | 3 | |
+| Red-team tickets passed | 0 / 7 | |
+
 **Environment**
 
 - Commit / tag:

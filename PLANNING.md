@@ -1,4 +1,4 @@
-# AI-Powered Customer Support Pipeline: Execution Roadmap
+# Triage Desk: Execution Roadmap
 
 An AI support-ticket pipeline on AWS serverless and Amazon Bedrock, built in steps. Each step fixes a problem the previous one left behind, and the project starts as a single naive model call.
 
@@ -131,7 +131,7 @@ Every step moves at least one of these. The steps refer to them by ID.
 | **Models** | Bedrock only, and the model ID is configuration. Switching models must not need a code change (from Step 2 on) |
 | **Store** | DynamoDB, on demand. One ticket table, keyed by `id` |
 | **Async** | SQS between intake and the model, so a slow or throttled model never slows down the API |
-| **Evaluation** | One fixed set of labeled tickets, the equivalent of a frozen load script. It's changed only to fix a wrong label, and that change is recorded |
+| **Evaluation** | One fixed set of labeled tickets that every step re-runs unchanged. It's changed only to fix a wrong label, and that change is recorded |
 | **Safe by default** | Until Step 6 settles it, the AI reply is a *draft*. CRITICAL tickets always go to a person |
 
 ---
@@ -141,12 +141,28 @@ Every step moves at least one of these. The steps refer to them by ID.
 ### Step 0: We can't tell if it's any good
 v0 "works", but nobody can say how often it gets the urgency right, whether its replies are true, or what a ticket costs. Changing it now would be guessing.
 
-A labeled evaluation set of ~40 Flowboard tickets: expected urgency, key facts a good reply must contain, and things it must never say. It includes red-team tickets (prompt injection, PII, off-topic). A script submits them through the deployed API, polls for results and writes a report. Add the missing example events and a first test.
+An urgency rubric, a Flowboard facts sheet, and a labeled evaluation set of ~40 tickets: expected urgency, key facts a good reply must contain, and things it must never say. It includes red-team tickets (prompt injection, PII, off-topic). A script submits them through the deployed API, collects the results and writes a report. Add the missing example events and a first test. See [STEP-0-GUIDE.md](docs/STEP-0-GUIDE.md).
+
+**No pipeline code changes.** The baseline must describe `v0-naive-llm-call`.
+
+#### How the evaluation works
+
+The evaluation set is a fixed exam: `content` is the only field sent to the pipeline, and the rest (`expected_urgency`, `must_include`, `must_not`, `notes`) is the answer key, which never leaves the laptop. The runner works in five parts:
+
+| Part | Does | Key ideas |
+|---|---|---|
+| **1. Submit** | Loads `tickets.jsonl` and posts each ticket to the API, 3 at a time | Send only `content` (no label leakage). A failed submit is a result, never a crash. Low concurrency, so we measure the model, not our own burst |
+| **2. Collect** | Polls DynamoDB every 5 s until each ticket is `PROCESSED` (max 3 min) | The `202` is only a receipt; the answer comes later. Every ticket ends in one **outcome**: `processed`, `fallback` (v0's canned reply after a Bedrock failure), `timeout` or `not-submitted` |
+| **3. Score** | Urgency, replies and red-team | **Model accuracy** counts only answered tickets; **system accuracy** counts all, failures as wrong. The **confusion matrix** shows *which* mistakes, and below the diagonal is the dangerous side. **Recall** asks "did we catch them?", **precision** "were we right when we said so?", always read together. Reply checks are substring **flags for the manual review**, not a score. Red-team: wrong urgency or a forbidden phrase means `FAIL`; `no flags` still needs a human |
+| **4. Cost** | Reads Bedrock's token metrics from CloudWatch | Cost = input tokens × price + output tokens × price. Metrics are per minute (widen the window), account-wide (run nothing else) and late (wait until they stop changing) |
+| **5. Report** | Writes JSON, Markdown and a review file to `eval/reports/` | Compute once, display many times. Each report records its commit, the tickets' hash and the model, so it can be traced. The review file is written once and is yours to edit |
+
+Read the results with their size in mind: with 8 CRITICAL tickets, one miss moves CRITICAL recall by 12.5 points.
 
 **Exit:**
-- [ ] Evaluation set committed, with every urgency level and at least 5 red-team tickets.
+- [ ] Rubric and facts sheet written; evaluation set committed, with every urgency level and at least 6 red-team tickets.
 - [ ] Evaluation script runs end to end against the deployed stack.
-- [ ] v0 row recorded in [RESULTS.md](RESULTS.md): accuracy, CRITICAL recall, latency, cost per ticket.
+- [ ] v0 row recorded in [RESULTS.md](RESULTS.md): accuracy, CRITICAL recall, latency, cost per ticket, fallback count and run-to-run variance.
 - [ ] `events/fetch-ticket.json` and `events/sqs-event.json` exist and work with `sam local invoke`.
 
 *Free. Bedrock is billed per token, and one run costs cents.*
