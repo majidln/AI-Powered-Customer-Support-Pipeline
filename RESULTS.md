@@ -81,7 +81,18 @@ Confusion matrix, expected vs. predicted:
 
 ### Step 0 findings
 
--
+#### 1. v0 silently drops and delays tickets at a Lambda concurrency limit of 10
+
+The first runs hit the account's Lambda concurrency limit: 10, the default for new AWS accounts. The processor holds a slot for each Bedrock call, and the receiver gets throttled when the slots are taken. Nothing alerts anyone.
+
+| Run | Runner concurrency | Receiver throttled → `503` | Processor throttled |
+|---|---|---|---|
+| 13:10 UTC | 3 | 18 of 42 tickets | 1 |
+| [`v0-throttled`](eval/reports/2026-10-22T134902-v0-throttled.md), 13:49 UTC | 1 | 3 of 42 (T33–T35) | 8 |
+
+- A throttled submit is an immediate `503 Service Unavailable`: the customer's ticket is lost, and v0 has no alarm for it.
+- A throttled processor call isn't lost, but SQS hides the message for its 30-second visibility timeout before retrying. Exactly 8 tickets took ~31 s, against 1–9 s for the rest (gap G3).
+- The run is kept as `v0-throttled`, not as the baseline: its latency and missing tickets describe the account limit, not v0. The official `v0` runs follow once the limit is raised. Its judgment numbers (53.8% model accuracy, CRITICAL recall 3/8) are a preview.
 
 ---
 
